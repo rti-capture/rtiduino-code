@@ -296,7 +296,7 @@ void setup() {
 	AUTORUN_LEDS[75][2] = 128;
 	
 	Serial3.begin(38400); //init serial port
-	Serial3.setTimeout(100);
+	Serial3.setTimeout(1000);
 	Serial3.println("RTI DOME Controller v0.3");
 
 	//Setup IO
@@ -369,6 +369,7 @@ void flash_debug(int time){
 
 void loop() {
 	char input[30];
+        memset(input,0,sizeof(input));
 	if(digitalRead(TRIGGER) == LOW){
 		Serial3.write("Starting autorun\r\n");
 		autorun();
@@ -385,7 +386,7 @@ void loop() {
 			Serial3.readBytes(null, 9);
 		} else if (Serial3.peek() == 'A'){
 			
-			Serial3.readBytes(input,Serial3.available());
+			Serial3.readBytes(input,6);
 	 		if(input[0] == 'A' && input[2] == 'B' && input[4] == 'C'){
 				char Astate = input[1];
 				char Bstate = input[3];
@@ -405,15 +406,22 @@ void loop() {
 				process(A, Astate);
 				process(B, Bstate);
 				process(C, Cstate);
+                                Serial3.print("OK ");
+                                Serial3.print(Astate);
+                                Serial3.print(" ");
+                                Serial3.print(Bstate);
+                                Serial3.print(" ");
+                                Serial3.println(Cstate);
 			}else{
 				flash_debug(100);
-				Serial3.write("Started promising");
+				Serial3.print("Started promising then went wrong:");
+                                Serial3.println(input);
 			}
 		}else{
 			//didn't get the expected amount of data from the serial link before timeout 
 			flash_debug(100);
 			char got = Serial3.read();
-			Serial3.print("Unexpected begining char");
+			Serial3.print("Unexpected begining char:");
 			Serial3.println(got);
 		 
 		}

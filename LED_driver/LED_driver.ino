@@ -12,6 +12,7 @@
 	const byte TRIGGER = 39; // 70Input to start automated capture
 	const byte AUTOMATED_RUNNING_LED = 40; //52
 	const byte DEBUG_LED = 13;
+        const int SERIAL_TIMEOUT = 100;
 	//OUTPUT BANKS
 	const byte A = 0;
 	const byte B = 1;
@@ -296,7 +297,7 @@ void setup() {
 	AUTORUN_LEDS[75][2] = 128;
 	
 	Serial3.begin(38400); //init serial port
-	Serial3.setTimeout(1000);
+	Serial3.setTimeout(SERIAL_TIMEOUT);
 	Serial3.println("RTI DOME Controller v0.3");
 
 	//Setup IO
@@ -412,10 +413,12 @@ void loop() {
                                 Serial3.print(Bstate);
                                 Serial3.print(" ");
                                 Serial3.println(Cstate);
+                                Serial3.flush();
 			}else{
 				flash_debug(100);
 				Serial3.print("Started promising then went wrong:");
                                 Serial3.println(input);
+                                Serial3.flush();
 			}
 		}else{
 			//didn't get the expected amount of data from the serial link before timeout 

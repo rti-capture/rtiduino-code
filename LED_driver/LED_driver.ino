@@ -435,7 +435,7 @@ void loop() {
 void autorun(){
 	// Perform an automated capture sequence 
 	digitalWrite(AUTOMATED_RUNNING_LED, HIGH);
-	for(int i = 0; i < sizeof(AUTORUN_LEDS); i++){
+	for(int i = 0; i < 76; i++){
 		process(A, char(AUTORUN_LEDS[i][0]));
 		process(B, char(AUTORUN_LEDS[i][1]));
 		process(C, char(AUTORUN_LEDS[i][2]));
@@ -447,7 +447,8 @@ void autorun(){
 		process(A, char(0));
 		process(B, char(0));
 		process(C, char(0));
-		delay(BETWEEN_SHOT_DELAY);   
+		delay(BETWEEN_SHOT_DELAY);
+                Serial3.println(i);
 	}
 	digitalWrite(AUTOMATED_RUNNING_LED, LOW);
 }

@@ -1,5 +1,6 @@
 /*
  LED driver for RTI Dome 7 "SuperDome"
+ Nov 2018 updates for glasgow dome
  Winter 2016
  Graeme Bragg
  g.bragg@ecs.soton.ac.uk
@@ -21,7 +22,7 @@
 #define BUTTON_DEBOUNCE_TIMEOUT   15000 // ~1s
 #define DEFAULT_NUM_LEDS          76   // The default number of LEDs connected. Currently only 76 and 128 are supported.
 
-//#define OVERWRITE_NUM_LEDS        128   // Compile-time overwite value for num_leds. This should be set, flashed, commented out and then re-flashed.
+//#define OVERWRITE_NUM_LEDS        76   // Compile-time overwite value for num_leds. This should be set, flashed, commented out and then re-flashed.
 
 /* -------------------------------------------------------------------------------------------- */
 
@@ -95,8 +96,7 @@ byte AUTORUN_LEDS[MAX_LEDS][LED_BANKS]; // Array to hold autorun sequence
 #define LIGHT_SLACK_TIME          10    // Slack time added to shutter times
 #define PRE_ON_DELAY              10    // LED "warm up" delay
 #define SHUTTER_ACTUATION_TIME    70    // 0.056s from http://www.imaging-resource.com/PRODS/nikon-d810/nikon-d810A6.HTM
-#define BETWEEN_SHOT_DELAY        1000  // The time between shots to allow writing to card, etc.
-//#define BETWEEN_SHOT_DELAY        10  // The time between shots to allow writing to card, etc.
+#define BETWEEN_SHOT_DELAY        1000  // The time between shots to allow writing to card. depends on cam/card
 #define MAX_SHUTTER               16    // Number of shutter speed entries
 #define DEFAULT_SHUTTER_KEY       10    // Default to half second exposures if EEPROM value corrupt/missing
 uint8_t shutter_key;                    // Key for the position in the shutter speed table - this is stored in EEPROM
@@ -177,7 +177,7 @@ void setup() {
   DEBUG_SERIAL.setTimeout(100);
 #endif
 // wait a bit to see if it helps screen
-wait(1)
+delay(500);
 #if HAS_SCREEN
   SCREEN.begin(9600); //init serial port
   SCREEN.setTimeout(100);
@@ -245,10 +245,11 @@ wait(1)
 /* ------------------------------- Write initialisation strings ------------------------------- */ 
   if(num_leds == 76) {
     // Standard 76-LED Dome
-    CONSOLE.write("RTI DOME Controller v0.2\r\n");
+    
+    CONSOLE.write("RTI DOME Controller v0.3\r\n");
 
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI DOME Controller v0.2\r\n");
+    DEBUG_SERIAL.write("RTI DOME Controller v0.3\r\n");
 #endif
 
   } else if(num_leds == 128) {
@@ -785,7 +786,7 @@ void screenBanner(void) {
  
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 0x40);    // Position 64, start of line 2
-  SCREEN.write("Controller v0.2");
+  SCREEN.write("Controller v0.3");
 #endif
 }
 

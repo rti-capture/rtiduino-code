@@ -1,5 +1,6 @@
 /*
  LED driver for RTI Dome 7 "SuperDome"
+ Nov 2018 updates for glasgow dome
  Winter 2016
  Graeme Bragg
  g.bragg@ecs.soton.ac.uk
@@ -19,17 +20,25 @@
 #define BUTTONS                   5     // The number of buttons connected to the controller
 #define BUTTON_TIMEOUT            45000 // Timeout for buttons. 15000 is 0.96s
 #define BUTTON_DEBOUNCE_TIMEOUT   15000 // ~1s
-#define DEFAULT_NUM_LEDS          128   // The default number of LEDs connected. Currently only 76 and 128 are supported.
+#define DEFAULT_NUM_LEDS          76   // The default number of LEDs connected. Currently only 76 and 128 are supported.
 
-//#define OVERWRITE_NUM_LEDS        128   // Compile-time overwite value for num_leds. This should be set, flashed, commented out and then re-flashed.
+//#define OVERWRITE_NUM_LEDS        76   // Compile-time overwite value for num_leds. This should be set, flashed, commented out and then re-flashed.
 
 /* -------------------------------------------------------------------------------------------- */
 
 /* --------------------------------------- Focus Config --------------------------------------- */  
 #define FOCUS_TIMEOUT             45000 // Timeout for focus.
 #define FOCUS_LIMIT               60   // Number of loops, 3 minutes ~ 60, 5 minutes ~ 100
+
+// 128-LED SuperDome
+#define FOCUS_BANK_AC_SUPER       136   // Two rows on - 8 + 128, same LEDs in all quarters
+#define FOCUS_BANK_B_SUPER        33    // first and sixth LED in each of the top banks.
+
+// 76-LED Dome
 #define FOCUS_BANK_AC             136   // Two rows on - 8 + 128, same LEDs in all quarters
-#define FOCUS_BANK_B              33    // first and sixth LED in each of the top banks.
+#define FOCUS_BANK_B              3    // first and sixth LED in each of the top banks.
+
+
 #define EXPOSUE_SET_TIME          500   // Leave light on for 500ms when setting exposure.
 
 /* -------------------------------------------------------------------------------------------- */
@@ -87,8 +96,7 @@ byte AUTORUN_LEDS[MAX_LEDS][LED_BANKS]; // Array to hold autorun sequence
 #define LIGHT_SLACK_TIME          10    // Slack time added to shutter times
 #define PRE_ON_DELAY              10    // LED "warm up" delay
 #define SHUTTER_ACTUATION_TIME    70    // 0.056s from http://www.imaging-resource.com/PRODS/nikon-d810/nikon-d810A6.HTM
-#define BETWEEN_SHOT_DELAY        1000  // The time between shots to allow writing to card, etc.
-
+#define BETWEEN_SHOT_DELAY        1000  // The time between shots to allow writing to card. depends on cam/card
 #define MAX_SHUTTER               16    // Number of shutter speed entries
 #define DEFAULT_SHUTTER_KEY       10    // Default to half second exposures if EEPROM value corrupt/missing
 uint8_t shutter_key;                    // Key for the position in the shutter speed table - this is stored in EEPROM
@@ -168,7 +176,8 @@ void setup() {
   DEBUG_SERIAL.begin(9600);
   DEBUG_SERIAL.setTimeout(100);
 #endif
-
+// wait a bit to see if it helps screen
+delay(500);
 #if HAS_SCREEN
   SCREEN.begin(9600); //init serial port
   SCREEN.setTimeout(100);
@@ -236,10 +245,11 @@ void setup() {
 /* ------------------------------- Write initialisation strings ------------------------------- */ 
   if(num_leds == 76) {
     // Standard 76-LED Dome
-    CONSOLE.write("RTI DOME Controller v0.2\r\n");
+    
+    CONSOLE.write("RTI DOME Controller v0.3\r\n");
 
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI DOME Controller v0.2\r\n");
+    DEBUG_SERIAL.write("RTI DOME Controller v0.3\r\n");
 #endif
 
   } else if(num_leds == 128) {
@@ -495,6 +505,26 @@ void spoofResponse(){
   CONSOLE.println("USB I/O 24R1"); 
 }
 
+// debug function
+void toggleAll(){
+  int bank, chan, reps;
+  DEBUG_SERIAL.write("Toggling ALL i/o on/off\r\n");
+  for(reps=0; reps<10; reps++){
+    for(bank=0; bank < 3; bank++){
+      for(chan = 0; chan = 7; chan++){
+        digitalWrite(leds[bank][chan], HIGH);
+      }
+    }
+    delay(500);
+    for(bank=0; bank < 3; bank++){
+      for(chan = 0; chan = 7; chan++){
+        digitalWrite(leds[bank][chan], LOW);
+      }
+    }
+    delay(500);
+  }
+}
+
 void process(byte bank, byte state_in){
   int state = state_in + 0;
   if (state & 1){
@@ -656,16 +686,24 @@ void button_handler(void) {
 void focus_handler(void) {
   // Turn on the top 4 lights to allow focusing.
   uint8_t focus_loop, row_key, col_key;
+// debug mode to flash all on
+ 
   
   status_byte &= ~(STATE_AUTORUN_STOP);
   status_byte |= STATE_AUTORUN;
-
+  
   screenFocus();              // Display the focus banner
 
   // Turn on the LEDs for focusing.
-  process(A, char(FOCUS_BANK_AC));
-  process(B, char(FOCUS_BANK_B));
-  process(C, char(FOCUS_BANK_AC));
+  if(num_leds == 128) {
+    process(A, char(FOCUS_BANK_AC_SUPER));
+    process(B, char(FOCUS_BANK_B_SUPER));
+    process(C, char(FOCUS_BANK_AC_SUPER));
+  } else {
+    process(A, char(FOCUS_BANK_AC));
+    process(B, char(FOCUS_BANK_B));
+    process(C, char(FOCUS_BANK_AC));
+  }
   
   // Use debounce timer to delay between FOCUS button tests.
   buttonDebounceReset();
@@ -748,7 +786,7 @@ void screenBanner(void) {
  
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 0x40);    // Position 64, start of line 2
-  SCREEN.write("Controller v0.2");
+  SCREEN.write("Controller v0.3");
 #endif
 }
 

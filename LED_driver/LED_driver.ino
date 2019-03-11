@@ -39,7 +39,7 @@
 #define FOCUS_BANK_B              3    // first and sixth LED in each of the top banks.
 
 
-#define EXPOSUE_SET_TIME          500   // Leave light on for 500ms when setting exposure.
+#define EXPOSURE_SET_TIME          500   // Leave light on for 500ms when setting exposure.
 
 /* -------------------------------------------------------------------------------------------- */
 
@@ -509,25 +509,6 @@ void spoofResponse(){
   CONSOLE.println("USB I/O 24R1"); 
 }
 
-// debug function
-void toggleAll(){
-  int bank, chan, reps;
-  DEBUG_SERIAL.write("Toggling ALL i/o on/off\r\n");
-  for(reps=0; reps<10; reps++){
-    for(bank=0; bank < 3; bank++){
-      for(chan = 0; chan = 7; chan++){
-        digitalWrite(leds[bank][chan], HIGH);
-      }
-    }
-    delay(500);
-    for(bank=0; bank < 3; bank++){
-      for(chan = 0; chan = 7; chan++){
-        digitalWrite(leds[bank][chan], LOW);
-      }
-    }
-    delay(500);
-  }
-}
 
 void process(byte bank, byte state_in){
   int state = state_in + 0;
@@ -638,11 +619,6 @@ void button_handler(void) {
           }
           else BETWEEN_SHOT_DELAY += 100;
           // Update the displayed value
-          //SCREEN.write(0xFE);           // Command Byte
-          //SCREEN.write(0x80 + 69);      // Position 70
-          //SCREEN.write("      ");
-          //SCREEN.write(0xFE);           // Command Byte
-          //SCREEN.write(0x80 + 69);      // Position 70  - NEEDS SDJUSTMENT!!!!!!!!!!!!!
           SCREEN.write(0xFE);           // Command Byte
           SCREEN.write(0x01);           // Clear Screen
           message = String(BETWEEN_SHOT_DELAY);
@@ -767,7 +743,7 @@ void focus_handler(void) {
             //Cycle through the different columns
             watchdogstart();
             process(B, FOCUS_GROUND[col_key]);
-            delay(EXPOSUE_SET_TIME);
+            delay(EXPOSURE_SET_TIME);
             process(B, char(0));
             watchdogstop();
             if(status_byte & STATE_AUTORUN_STOP) break; // E-Stop has been pressed, stop running.
@@ -874,10 +850,10 @@ ISR(TIMER1_COMPA_vect){//timer0 interrupt 2kHz toggles pin 8
 
 ISR (PCINT2_vect) {     // Pin change interrupt for Port K
   if(status_byte & STATE_AUTORUN) {     // Only execute if we are currently autorunning
-    PORTA = 0;                          // Kill Bank A
-    PORTL = 0;                          // Kill Bank C
-    PORTC = 0;                          // Kill Bank B
-    digitalWrite(CAMERA_SHUTTER, LOW);  // Kill camera shutter
+    PORTA = 0;                          // turn off Bank A
+    PORTL = 0;                          // turn off Bank C
+    PORTC = 0;                          // turn off Bank B
+    digitalWrite(CAMERA_SHUTTER, LOW);  // turn off camera shutter just in case
     status_byte |= STATE_AUTORUN_STOP;  // Mark that the STOP interrupt has fired  
   }
 }

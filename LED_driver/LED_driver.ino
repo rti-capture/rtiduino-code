@@ -1,11 +1,11 @@
 /*
- LED driver for RTI Dome 7 "SuperDome"
- Nov 2018 updates for glasgow dome
+ LED driver for RTI Dome 7 "SuperDome" onwards
+ Nov 2018 updates for glasgow dome, Kirk Martinez
  Winter 2016
  Graeme Bragg
  g.bragg@ecs.soton.ac.uk
 
- Modified from LED driver for RTI domes ma rk >3
+ Modified from LED driver for RTI domes mark >3
  Autumn 2013
  Philip Basford
  pjbasford@ieee.org
@@ -93,10 +93,10 @@ uint8_t num_leds;                       // Number of LEDs connected to the contr
 byte AUTORUN_LEDS[MAX_LEDS][LED_BANKS]; // Array to hold autorun sequence
 
 //Automated running
-#define LIGHT_SLACK_TIME          10    // Slack time added to shutter times
-#define PRE_ON_DELAY              10    // LED "warm up" delay
+#define LIGHT_SLACK_TIME          20    // Slack time added to shutter times
+#define PRE_ON_DELAY              20    // LED "warm up" delay
 #define SHUTTER_ACTUATION_TIME    70    // 0.056s from http://www.imaging-resource.com/PRODS/nikon-d810/nikon-d810A6.HTM
-#define BETWEEN_SHOT_DELAY        1000  // The time between shots to allow writing to card. depends on cam/card
+uint16_t BETWEEN_SHOT_DELAY = 500;  // The time in ms between shots to allow writing to card. depends on cam/card
 #define MAX_SHUTTER               16    // Number of shutter speed entries
 #define DEFAULT_SHUTTER_KEY       10    // Default to half second exposures if EEPROM value corrupt/missing
 uint8_t shutter_key;                    // Key for the position in the shutter speed table - this is stored in EEPROM
@@ -617,7 +617,7 @@ uint16_t buttonDebounceValue (void) {
 
 void button_handler(void) {
   uint8_t up_state, down_state = 0;
-
+  String message;
   screenShutter();              // Display the shutter banner
   buttonTimerReset();           // Start the button timeout 
   
@@ -627,23 +627,42 @@ void button_handler(void) {
         up_state = 1;             // Mark up debounce
         down_state = 0;           // Clear down debounce
         buttonDebounceReset();    // Reset debounce
-        
-        if (shutter_key < MAX_SHUTTER) {
-          shutter_key++;
-        } else if (shutter_key > MAX_SHUTTER) {   // sanity check
-          shutter_key = MAX_SHUTTER;
-        }
 
-        // Update the displayed value
-        SCREEN.write(0xFE);           // Command Byte
-        SCREEN.write(0x80 + 69);      // Position 70
-        SCREEN.write("      ");
-        SCREEN.write(0xFE);           // Command Byte
-        SCREEN.write(0x80 + 69);      // Position 70
-        SCREEN.write(light_menu_strs[shutter_key]);
-        delay(30);
-      } 
-      buttonTimerReset();       // Reset button timeout
+        if(digitalRead(FOCUS) == LOW) {     // Special delay setting mode
+          if( BETWEEN_SHOT_DELAY >= 1000) {
+            BETWEEN_SHOT_DELAY = 100;
+          }
+          else BETWEEN_SHOT_DELAY += 100;
+          // Update the displayed value
+          //SCREEN.write(0xFE);           // Command Byte
+          //SCREEN.write(0x80 + 69);      // Position 70
+          //SCREEN.write("      ");
+          //SCREEN.write(0xFE);           // Command Byte
+          //SCREEN.write(0x80 + 69);      // Position 70  - NEEDS SDJUSTMENT!!!!!!!!!!!!!
+          SCREEN.write(0xFE);           // Command Byte
+          SCREEN.write(0x01);           // Clear Screen
+          message = String(BETWEEN_SHOT_DELAY);
+          SCREEN.print("delay:" + message + "ms " );
+          delay(30);
+          }
+        else{
+          if (shutter_key < MAX_SHUTTER) {
+            shutter_key++;
+          } else if (shutter_key > MAX_SHUTTER) {   // sanity check
+            shutter_key = MAX_SHUTTER;
+          }
+  
+          // Update the displayed value
+          SCREEN.write(0xFE);           // Command Byte
+          SCREEN.write(0x80 + 69);      // Position 70
+          SCREEN.write("      ");
+          SCREEN.write(0xFE);           // Command Byte
+          SCREEN.write(0x80 + 69);      // Position 70
+          SCREEN.write(light_menu_strs[shutter_key]);
+          delay(30);
+        } 
+        buttonTimerReset();       // Reset button timeout
+      }
     } else if(digitalRead(DOWN) == LOW) {     // Down button pressed
       if (down_state == 0) {              // if we are not in debounce, decrement
         down_state = 1;           // Mark down debounce
@@ -800,11 +819,11 @@ void screenShutter(void) {
   SCREEN.write("Shutter Speed:");
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 64);      // Position 64, start of line 2
-  SCREEN.write("DWN: ");
+  SCREEN.write("     ");
   SCREEN.write(light_menu_strs[shutter_key]);
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 75);      // Position 64, start of line 2
-  SCREEN.write(": UP ");
+  SCREEN.write("     ");
 #endif  
 }
 

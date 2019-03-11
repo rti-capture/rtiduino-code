@@ -89,8 +89,10 @@
 
 //LED Variables
 uint8_t num_leds;                       // Number of LEDs connected to the controller
+uint8_t num_cols;                       // Number of columns used.
 
 byte AUTORUN_LEDS[MAX_LEDS][LED_BANKS]; // Array to hold autorun sequence
+byte FOCUS_GROUND[8];                   // Array to hold focus ground sequence.
 
 //Automated running
 #define LIGHT_SLACK_TIME          20    // Slack time added to shutter times
@@ -245,7 +247,7 @@ delay(500);
 /* ------------------------------- Write initialisation strings ------------------------------- */ 
   if(num_leds == 76) {
     // Standard 76-LED Dome
-    
+    num_cols = 5;
     CONSOLE.write("RTI DOME Controller v0.3\r\n");
 
 #ifdef DEBUG_SERIAL
@@ -254,10 +256,12 @@ delay(500);
 
   } else if(num_leds == 128) {
     // 128-LED SuperDome
-    CONSOLE.write("RTI SUPERDOME Controller v0.2\r\n");
+    num_cols = 8;
+    
+    CONSOLE.write("RTI SUPERDOME Controller v0.3\r\n");
   
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI SUPERDOME Controller v0.2\r\n");
+    DEBUG_SERIAL.write("RTI SUPERDOME Controller v0.3\r\n");
 #endif
   }
 
@@ -373,7 +377,7 @@ void flash_debug(int time){
 
 
 void loop() {
-#if BUTTONS > 1           // 2nd button (BUTTON_1) is always GREEN/trigger
+#if BUTTONS > 1           // 2nd button (BUTTON_1) is always GO/trigger
   if((digitalRead(TRIGGER) == LOW) || (digitalRead(GO) == LOW)) {
 #else
   if(digitalRead(TRIGGER) == LOW){
@@ -759,10 +763,10 @@ void focus_handler(void) {
             deafult:  break;
           }
           
-          for(col_key = 0; col_key < 8; col_key++) {
+          for(col_key = 0; col_key < num_cols; col_key++) {
             //Cycle through the different columns
             watchdogstart();
-            process(B, char(1 << col_key));
+            process(B, FOCUS_GROUND[col_key]);
             delay(EXPOSUE_SET_TIME);
             process(B, char(0));
             watchdogstop();

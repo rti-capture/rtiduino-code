@@ -248,20 +248,20 @@ delay(500);
   if(num_leds == 76) {
     // Standard 76-LED Dome
     num_cols = 5;
-    CONSOLE.write("RTI DOME Controller v0.3\r\n");
+    CONSOLE.write("RTI DOME Controller v1.3\r\n");
 
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI DOME Controller v0.3\r\n");
+    DEBUG_SERIAL.write("RTI DOME Controller v1.3\r\n");
 #endif
 
   } else if(num_leds == 128) {
     // 128-LED SuperDome
     num_cols = 8;
     
-    CONSOLE.write("RTI SUPERDOME Controller v0.3\r\n");
+    CONSOLE.write("RTI SUPERDOME Controller v1.3\r\n");
   
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI SUPERDOME Controller v0.3\r\n");
+    DEBUG_SERIAL.write("RTI SUPERDOME Controller v1.3\r\n");
 #endif
   }
 
@@ -785,7 +785,7 @@ void screenBanner(void) {
  
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 0x40);    // Position 64, start of line 2
-  SCREEN.write("Controller v0.3");
+  SCREEN.write("Controller v1.3");
 #endif
 }
 
@@ -828,7 +828,7 @@ void screenExposure(void) {
   SCREEN.write(0x01);           // Clear screen
   delay(SCREEN_CMD_DELAY);
   
-  SCREEN.write("Exposure Autowalk");
+  SCREEN.write("Exposure Cycle");
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 64);      // Position 64, start of line 2
   SCREEN.write("STOP to exit");

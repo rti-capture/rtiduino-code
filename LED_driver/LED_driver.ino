@@ -13,6 +13,9 @@
  WARNING: All arrays are bytes so sizeof = length
 */
 
+# define PG3_FOCUS
+
+
 /* ----------------------------------- Compile-time settings ---------------------------------- */  
 #define DEBUG                     1     // Define whether to output debug info on debug serial port
 #define HAS_SCREEN                1     // Define whether a serial screen is connected to Serial2
@@ -44,7 +47,9 @@
 /* -------------------------------------------------------------------------------------------- */
 
 /* -------------------------------- System Config Definitions --------------------------------- */  
+#include <Arduino.h>
 #include <pins_arduino.h>
+
 
 // EEPROM Config
 #include <EEPROM.h>
@@ -64,7 +69,8 @@
 #define C                         2
 
 // Hardware Config
-#define DEBUG_LED                 13  // 
+#define DEBUG_LED                 13  //
+#define CAMERA_FOCUS              75 // Package pin 28: output to trigger camera focus - NOT MAPPED IN ARDUINO but is in https://github.com/MCUdude/MegaCore
 #define CAMERA_SHUTTER            41  // Package pin 51: output to trigger camera
 #define TRIGGER                   39  // Package pin 70: Input to start automated capture
 #define AUTOMATED_RUNNING_LED     40  // Package pin 52
@@ -97,6 +103,7 @@ byte FOCUS_GROUND[8];                   // Array to hold focus ground sequence.
 //Automated running
 #define LIGHT_SLACK_TIME          20    // Slack time added to shutter times
 #define PRE_ON_DELAY              20    // LED "warm up" delay
+#define FOCUS_LAG_TIME            100   // 100ms for canon from PJB's testing
 #define SHUTTER_ACTUATION_TIME    70    // 0.056s from http://www.imaging-resource.com/PRODS/nikon-d810/nikon-d810A6.HTM
 uint16_t BETWEEN_SHOT_DELAY = 500;  // The time in ms between shots to allow writing to card. depends on cam/card
 #define MAX_SHUTTER               16    // Number of shutter speed entries
@@ -288,6 +295,21 @@ delay(500);
         pinMode(leds[i][j], OUTPUT); //set the pin for the LED as an output
       }
   }
+
+#ifdef PG3_FOCUS
+  // schematic SNAFU on Domes 12+ where the camera FOCUS trigger is NOT on an Arduino mapped pin
+  // The pin is on PG3, which is on port 7 (according to Arduino.h) as PG is not liked here.
+  // In its own curlys for variable scoping reasons
+  {
+    volatile uint8_t *reg = portModeRegister(7);
+    uint8_t oldSREG = SREG;
+    cli();
+    *reg |= _BV( 2 );
+    SREG = oldSREG;
+  }
+#else
+  pinMode(CAMERA_FOCUS, OUTPUT); 
+#endif
 
 #if BUTTONS > 0
   // Setup any configured buttons - assumes buttons are on consecutive pins.
@@ -481,9 +503,41 @@ void autorun(){
       process(B, char(AUTORUN_LEDS[i][1]));
       process(C, char(AUTORUN_LEDS[i][2]));
       delay(PRE_ON_DELAY);                      // LED "warmup" time
+#ifdef PG3_FOCUS
+      // schematic SNAFU on Domes 12+ where the camera FOCUS trigger is NOT on an Arduino mapped pin
+      // The pin is on PG3, which is on port 7 (according to Arduino.h) as PG is not liked here.
+      // In its own curlys for variable scoping reasons
+      {
+        volatile uint8_t *out = portModeRegister(7);
+        uint8_t oldSREG = SREG;
+        cli();
+        *out |= _BV(2);
+        SREG = oldSREG;
+      }
+#else
+      digitalWrite(CAMERA_FOCUS, HIGH); 
+#endif
+      delay(FOCUS_LAG_TIME);                    // Give the camera some time to process the focus half-press  
+      
       digitalWrite(CAMERA_SHUTTER, HIGH);       // Actuate the shutter
       delay(SHUTTER_ACTUATION_TIME);            // Give the camera some time to process the shutter
       digitalWrite(CAMERA_SHUTTER, LOW);        // Disable shutter actuation
+
+#ifdef PG3_FOCUS
+      // schematic SNAFU on Domes 12+ where the camera FOCUS trigger is NOT on an Arduino mapped pin
+      // The pin is on PG3, which is on port 7 (according to Arduino.h) as PG is not liked here.
+      // In its own curlys for variable scoping reasons
+      {
+        volatile uint8_t *out = portModeRegister(7);
+        uint8_t oldSREG = SREG;
+        cli();
+        *out &= ~(_BV(2));
+        SREG = oldSREG;
+      }
+#else
+      digitalWrite(CAMERA_FOCUS, LOW); 
+#endif  
+      
       delay(light_on_time[shutter_key]);        // Leave the LED on for the exposure time.
       process(A, char(0));
       process(B, char(0));

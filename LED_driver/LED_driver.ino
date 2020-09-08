@@ -304,7 +304,7 @@ delay(500);
     volatile uint8_t *reg = portModeRegister(7);
     uint8_t oldSREG = SREG;
     cli();
-    *reg |= _BV( 2 );
+    *reg |= _BV( 3 );
     SREG = oldSREG;
   }
 #else
@@ -511,7 +511,7 @@ void autorun(){
         volatile uint8_t *out = portModeRegister(7);
         uint8_t oldSREG = SREG;
         cli();
-        *out |= _BV(2);
+        *out |= _BV(3);
         SREG = oldSREG;
       }
 #else
@@ -531,7 +531,7 @@ void autorun(){
         volatile uint8_t *out = portModeRegister(7);
         uint8_t oldSREG = SREG;
         cli();
-        *out &= ~(_BV(2));
+        *out &= ~(_BV(3));
         SREG = oldSREG;
       }
 #else

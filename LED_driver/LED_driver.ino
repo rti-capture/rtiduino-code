@@ -508,7 +508,7 @@ void autorun(){
       // The pin is on PG3, which is on port 7 (according to Arduino.h) as PG is not liked here.
       // In its own curlys for variable scoping reasons
       {
-        volatile uint8_t *out = portModeRegister(7);
+        volatile uint8_t *out = portOutputRegister(7);
         uint8_t oldSREG = SREG;
         cli();
         *out |= _BV(3);
@@ -528,7 +528,7 @@ void autorun(){
       // The pin is on PG3, which is on port 7 (according to Arduino.h) as PG is not liked here.
       // In its own curlys for variable scoping reasons
       {
-        volatile uint8_t *out = portModeRegister(7);
+        volatile uint8_t *out = portOutputRegister(7);
         uint8_t oldSREG = SREG;
         cli();
         *out &= ~(_BV(3));

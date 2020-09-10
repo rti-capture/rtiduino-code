@@ -255,10 +255,10 @@ delay(500);
   if(num_leds == 76) {
     // Standard 76-LED Dome
     num_cols = 5;
-    CONSOLE.write("RTI DOME Controller v1.3\r\n");
+    CONSOLE.write("RTI DOME Controller v1.4\r\n");
 
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI DOME Controller v1.3\r\n");
+    DEBUG_SERIAL.write("RTI DOME Controller v1.4\r\n");
 #endif
 
   } else if(num_leds == 128) {

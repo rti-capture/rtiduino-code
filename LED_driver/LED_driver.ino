@@ -1,6 +1,6 @@
 /*
  LED driver for RTI Dome 7 "SuperDome" onwards
- Nov 2018 updates for glasgow dome, Kirk Martinez
+ Nov 2018 updates for 2019/20 domes, Kirk Martinez
  Winter 2016
  Graeme Bragg
  g.bragg@ecs.soton.ac.uk
@@ -42,7 +42,7 @@
 #define FOCUS_BANK_B              3    // first and sixth LED in each of the top banks.
 
 
-#define EXPOSURE_SET_TIME          500   // Leave light on for 500ms when setting exposure.
+#define EXPOSURE_SET_TIME          1000   // Leave light on for 1000ms when setting exposure.
 
 /* -------------------------------------------------------------------------------------------- */
 
@@ -559,7 +559,7 @@ void autorun(){
 }
 
 void spoofResponse(){
-  // Spoof the response from the USB IO device
+  // Spoof the response from the USB IO device (in case old rti acquire talks to us)
   CONSOLE.println("USB I/O 24R1"); 
 }
 
@@ -796,7 +796,7 @@ void focus_handler(void) {
           for(col_key = 0; col_key < num_cols; col_key++) {
             //Cycle through the different columns
             watchdogstart();
-            process(B, FOCUS_GROUND[col_key]);
+            process(B, char(1 << col_key));
             delay(EXPOSURE_SET_TIME);
             process(B, char(0));
             watchdogstop();

@@ -1,6 +1,6 @@
 /*
  LED driver for RTI Dome 7 "SuperDome" onwards
- Nov 2018 updates for glasgow dome, Kirk Martinez
+ Nov 2018 updates for 2019/20 domes, Kirk Martinez km@ecs.soton.ac.uk
  Winter 2016
  Graeme Bragg
  g.bragg@ecs.soton.ac.uk
@@ -11,7 +11,13 @@
  pjbasford@ieee.org
  
  WARNING: All arrays are bytes so sizeof = length
+ BETWEEN_SHOT delay is to allow camera to flush to card. 
+ This can be short for JPG and fast cards but may need adjusting with focus+Down for slow card or RAW 
+ it is not currently saved to flash so reset each power-cycle.
 */
+/* define this for 2020 controllers with two optos for camera control
+*/
+#define PG3_FOCUS
 
 /* ----------------------------------- Compile-time settings ---------------------------------- */  
 #define DEBUG                     1     // Define whether to output debug info on debug serial port
@@ -20,11 +26,10 @@
 #define BUTTONS                   5     // The number of buttons connected to the controller
 #define BUTTON_TIMEOUT            45000 // Timeout for buttons. 15000 is 0.96s
 #define BUTTON_DEBOUNCE_TIMEOUT   15000 // ~1s
-#define DEFAULT_NUM_LEDS          76   // The default number of LEDs connected. Currently only 76 and 128 are supported.
+#define DEFAULT_NUM_LEDS          128   // The default number of LEDs connected. Currently only 76 and 128 are supported.
 
 //#define OVERWRITE_NUM_LEDS        76   // Compile-time overwite value for num_leds. This should be set, flashed, commented out and then re-flashed.
 
-/* -------------------------------------------------------------------------------------------- */
 
 /* --------------------------------------- Focus Config --------------------------------------- */  
 #define FOCUS_TIMEOUT             45000 // Timeout for focus.
@@ -39,11 +44,11 @@
 #define FOCUS_BANK_B              3    // first and sixth LED in each of the top banks.
 
 
-#define EXPOSURE_SET_TIME          500   // Leave light on for 500ms when setting exposure.
+#define EXPOSURE_SET_TIME          1000   // Leave light on for 1000ms when setting exposure.
 
-/* -------------------------------------------------------------------------------------------- */
 
 /* -------------------------------- System Config Definitions --------------------------------- */  
+#include <Arduino.h>
 #include <pins_arduino.h>
 
 // EEPROM Config
@@ -64,7 +69,8 @@
 #define C                         2
 
 // Hardware Config
-#define DEBUG_LED                 13  // 
+#define DEBUG_LED                 13  //
+#define CAMERA_FOCUS              75 // Package pin 28: output to trigger camera focus - NOT MAPPED IN ARDUINO but is in https://github.com/MCUdude/MegaCore
 #define CAMERA_SHUTTER            41  // Package pin 51: output to trigger camera
 #define TRIGGER                   39  // Package pin 70: Input to start automated capture
 #define AUTOMATED_RUNNING_LED     40  // Package pin 52
@@ -97,8 +103,9 @@ byte FOCUS_GROUND[8];                   // Array to hold focus ground sequence.
 //Automated running
 #define LIGHT_SLACK_TIME          20    // Slack time added to shutter times
 #define PRE_ON_DELAY              20    // LED "warm up" delay
+#define FOCUS_LAG_TIME            100   // 100ms for canon from PJB's testing
 #define SHUTTER_ACTUATION_TIME    70    // 0.056s from http://www.imaging-resource.com/PRODS/nikon-d810/nikon-d810A6.HTM
-uint16_t BETWEEN_SHOT_DELAY = 500;  // The time in ms between shots to allow writing to card. depends on cam/card
+uint16_t BETWEEN_SHOT_DELAY = 400;      // default time in ms between shots to allow writing to card. depends on cam/card
 #define MAX_SHUTTER               16    // Number of shutter speed entries
 #define DEFAULT_SHUTTER_KEY       10    // Default to half second exposures if EEPROM value corrupt/missing
 uint8_t shutter_key;                    // Key for the position in the shutter speed table - this is stored in EEPROM
@@ -108,7 +115,6 @@ uint8_t shutter_key;                    // Key for the position in the shutter s
 #define STATE_AUTORUN             0x01  // State mask to indicate autorun is in progress
 #define STATE_AUTORUN_STOP        0x02  // State mask to indicate that autorun should stop
 uint8_t status_byte = 0;                // Status byte to indicate run state.
-/* -------------------------------------------------------------------------------------------- */
 
 /* -------------------------------------- Static arrays --------------------------------------- */  
 const byte leds[LED_BANKS][8] = {     /* Pin allocations for LED banks */
@@ -200,7 +206,6 @@ delay(500);
   SCREEN.write(0x01);           // Clear Screen
   delay(SCREEN_CMD_DELAY);
 #endif
-/* -------------------------------------------------------------------------------------------- */
 
 /* --------------------------- Check & update stored number of LEDs --------------------------- */
   num_leds = EEPROM.read(ADDR_NUM_LEDS);    // Get the number of LEDs stored in EEPROM
@@ -224,7 +229,6 @@ delay(500);
     num_leds = DEFAULT_NUM_LEDS;
     EEPROM.put(ADDR_NUM_LEDS, DEFAULT_NUM_LEDS);
   }
-/* -------------------------------------------------------------------------------------------- */
 
 /* ---------------------------------- Get Stored Shutter Key ---------------------------------- */
   shutter_key = EEPROM.read(ADDR_SHUTTER_KEY);    // Get the shutter key stored in EEPROM
@@ -242,32 +246,30 @@ delay(500);
     shutter_key = DEFAULT_SHUTTER_KEY;
     EEPROM.put(ADDR_SHUTTER_KEY, DEFAULT_SHUTTER_KEY);
   }
-/* -------------------------------------------------------------------------------------------- */
 
 /* ------------------------------- Write initialisation strings ------------------------------- */ 
   if(num_leds == 76) {
     // Standard 76-LED Dome
     num_cols = 5;
-    CONSOLE.write("RTI DOME Controller v1.3\r\n");
+    CONSOLE.write("RTI DOME Controller v1.4\r\n");
 
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI DOME Controller v1.3\r\n");
+    DEBUG_SERIAL.write("RTI DOME Controller v1.4\r\n");
 #endif
 
   } else if(num_leds == 128) {
     // 128-LED SuperDome
     num_cols = 8;
     
-    CONSOLE.write("RTI SUPERDOME Controller v1.3\r\n");
+    CONSOLE.write("RTI SUPERDOME Controller v1.4\r\n");
   
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI SUPERDOME Controller v1.3\r\n");
+    DEBUG_SERIAL.write("RTI SUPERDOME Controller v1.4\r\n");
 #endif
   }
 
   screenBanner();    // Print the screen banner
 
-/* -------------------------------------------------------------------------------------------- */
 
 /* -------------------------------- Setup autorun LED sequence -------------------------------- */
   if(num_leds == 76)  {  
@@ -275,7 +277,6 @@ delay(500);
   } else if (num_leds == 128) {
     setup_autorun_superdome();
   }
-/* -------------------------------------------------------------------------------------------- */
 
 /* -------------------------------------- Setup I/O pins -------------------------------------- */ 
   pinMode(TRIGGER, INPUT);
@@ -288,6 +289,21 @@ delay(500);
         pinMode(leds[i][j], OUTPUT); //set the pin for the LED as an output
       }
   }
+
+#ifdef PG3_FOCUS
+  // schematic SNAFU on Domes 12+ where the camera FOCUS trigger is NOT on an Arduino mapped pin
+  // The pin is on PG3, which is on port 7 (according to Arduino.h) as PG is not liked here.
+  // In its own curlys for variable scoping reasons
+  {
+    volatile uint8_t *reg = portModeRegister(7);
+    uint8_t oldSREG = SREG;
+    cli();
+    *reg |= _BV( 3 );
+    SREG = oldSREG;
+  }
+#else
+  pinMode(CAMERA_FOCUS, OUTPUT); 
+#endif
 
 #if BUTTONS > 0
   // Setup any configured buttons - assumes buttons are on consecutive pins.
@@ -311,13 +327,9 @@ delay(500);
 
 #endif
 
-/* -------------------------------------------------------------------------------------------- */
-
 /* ------------------------------------- Initialise Timers ------------------------------------ */
   watchdoginit();
-  
   buttonTimerInit();
-/* -------------------------------------------------------------------------------------------- */
 
 /* -------------------------------------- Setup I/O pins -------------------------------------- */   
   CONSOLE.write("Init Complete\r\n");
@@ -342,7 +354,7 @@ void watchdoginit() {
   TCNT1  = 1;//initialize counter value to 0
    // enable timer compare interrupt
   TIMSK1 |= (1 << OCIE1A);
-  // set compare match register for 1hz increments (sets Timeout)
+  // set compare match register for 1Hz increments (sets Timeout)
   OCR1A = 31250; // = (16*10^6) / (1*1024) - 1 (must be <65536)
   // turn on CTC mode
   TCCR1B |= (1 << WGM12);
@@ -481,9 +493,41 @@ void autorun(){
       process(B, char(AUTORUN_LEDS[i][1]));
       process(C, char(AUTORUN_LEDS[i][2]));
       delay(PRE_ON_DELAY);                      // LED "warmup" time
+#ifdef PG3_FOCUS
+      // schematic SNAFU on Domes 12+ where the camera FOCUS trigger is NOT on an Arduino mapped pin
+      // The pin is on PG3, which is on port 7 (according to Arduino.h) as PG is not liked here.
+      // In its own curlys for variable scoping reasons
+      {
+        volatile uint8_t *out = portOutputRegister(7);
+        uint8_t oldSREG = SREG;
+        cli();
+        *out |= _BV(3);
+        SREG = oldSREG;
+      }
+#else
+      digitalWrite(CAMERA_FOCUS, HIGH); 
+#endif
+      delay(FOCUS_LAG_TIME);                    // Give the camera some time to process the focus half-press  
+      
       digitalWrite(CAMERA_SHUTTER, HIGH);       // Actuate the shutter
       delay(SHUTTER_ACTUATION_TIME);            // Give the camera some time to process the shutter
       digitalWrite(CAMERA_SHUTTER, LOW);        // Disable shutter actuation
+
+#ifdef PG3_FOCUS
+      // schematic SNAFU on Domes 12+ where the camera FOCUS trigger is NOT on an Arduino mapped pin
+      // The pin is on PG3, which is on port 7 (according to Arduino.h) as PG is not liked here.
+      // In its own curlys for variable scoping reasons
+      {
+        volatile uint8_t *out = portOutputRegister(7);
+        uint8_t oldSREG = SREG;
+        cli();
+        *out &= ~(_BV(3));
+        SREG = oldSREG;
+      }
+#else
+      digitalWrite(CAMERA_FOCUS, LOW); 
+#endif  
+      
       delay(light_on_time[shutter_key]);        // Leave the LED on for the exposure time.
       process(A, char(0));
       process(B, char(0));
@@ -505,7 +549,7 @@ void autorun(){
 }
 
 void spoofResponse(){
-  // Spoof the response from the USB IO device
+  // Spoof the response from the USB IO device (in case old rti acquire talks to us)
   CONSOLE.println("USB I/O 24R1"); 
 }
 
@@ -685,15 +729,13 @@ void button_handler(void) {
 void focus_handler(void) {
   // Turn on the top 4 lights to allow focusing.
   uint8_t focus_loop, row_key, col_key;
-// debug mode to flash all on
- 
   
   status_byte &= ~(STATE_AUTORUN_STOP);
   status_byte |= STATE_AUTORUN;
   
   screenFocus();              // Display the focus banner
 
-  // Turn on the LEDs for focusing.
+  // Turn on some LEDs for focusing.
   if(num_leds == 128) {
     process(A, char(FOCUS_BANK_AC_SUPER));
     process(B, char(FOCUS_BANK_B_SUPER));
@@ -742,7 +784,7 @@ void focus_handler(void) {
           for(col_key = 0; col_key < num_cols; col_key++) {
             //Cycle through the different columns
             watchdogstart();
-            process(B, FOCUS_GROUND[col_key]);
+            process(B, char(1 << col_key));
             delay(EXPOSURE_SET_TIME);
             process(B, char(0));
             watchdogstop();
@@ -785,7 +827,7 @@ void screenBanner(void) {
  
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 0x40);    // Position 64, start of line 2
-  SCREEN.write("Controller v1.3");
+  SCREEN.write("Controller v1.4");
 #endif
 }
 

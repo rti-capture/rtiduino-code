@@ -55,7 +55,7 @@
 #include <EEPROM.h>
 #define ADDR_NUM_LEDS             0
 #define ADDR_SHUTTER_KEY          7
-#define ADDR_FLUSHDELAY           12
+#define ADDR_FLUSHDELAY           15
 
 // Serial Port Assignments
 #define DEBUG_SERIAL              Serial
@@ -252,13 +252,13 @@ delay(500);
 
     shutter_key = DEFAULT_SHUTTER_KEY;
     EEPROM.put(ADDR_SHUTTER_KEY, DEFAULT_SHUTTER_KEY);
-    }
+  }
 
-    flush_delay = EEPROM.read( ADDR_FLUSHDELAY); // get stored delay and set to default if out of range
-    if( (flush_delay < FLUSH_DELAY_MIN) || (flush_delay > FLUSH_DELAY_MAX) ) {
-      flush_delay = DEFAULT_FLUSH_DELAY;
-      EEPROM.put(ADDR_FLUSHDELAY, DEFAULT_FLUSH_DELAY);
-    }
+  EEPROM.get(ADDR_FLUSHDELAY, flush_delay); // get stored delay and set to default if out of range
+  if( (flush_delay < FLUSH_DELAY_MIN) || (flush_delay > FLUSH_DELAY_MAX) ) {
+    flush_delay = DEFAULT_FLUSH_DELAY;
+    EEPROM.put(ADDR_FLUSHDELAY, DEFAULT_FLUSH_DELAY);
+  }
 
 /* ------------------------------- Write initialisation strings ------------------------------- */
   if(num_leds == 76) {
@@ -672,79 +672,75 @@ void button_handler(void) {
   buttonTimerReset();           // Start the button timeout
 
   while (buttonTimerValue() < BUTTON_TIMEOUT) {
-    if(digitalRead(UP) == LOW) {              // UP button pressed
+    if(digitalRead(FOCUS) == LOW) {     // Special delay setting mode
+      uint16_t flush_delay_set = flush_delay;   // Grab a copy of flush delay
+      screenFlushDelay();       // Goto the Flush screen
+      delay(300);
+
+      // Stay on this screen until FOCUS is released
+      while(digitalRead(FOCUS) == LOW) {
+
+        // Go up with wrap, with the option of going down to FLUSH_DELAY_MIN
+        if(digitalRead(UP) == LOW) {
+          flush_delay += 50;
+        }
+        else if((digitalRead(DOWN) == LOW) && (flush_delay>FLUSH_DELAY_MIN)) {
+          flush_delay -= 50;
+        }
+
+        // Handle the wrap
+        if( flush_delay > FLUSH_DELAY_MAX) {
+          flush_delay = FLUSH_DELAY_MIN;
+        }
+
+        // Update the displayed value
+        SCREEN.write(0xFE);           // Command Byte
+        SCREEN.write(0x80 + 69);      // Position 70
+        SCREEN.print(flush_delay, DEC);
+        SCREEN.write(" ms");
+        if(flush_delay == flush_delay_set) {
+          SCREEN.write(" *  ");
+        } else {
+          SCREEN.write("    ");
+        }
+        delay(300);
+
+      }
+
+      // Write the flush delay to EEPROM if it has changed
+      if(flush_delay != flush_delay_set) {
+        EEPROM.put(ADDR_FLUSHDELAY, flush_delay);
+      }
+      delay(30);
+      break;            // Jump out of the button handler
+    }
+    else if(digitalRead(UP) == LOW) {              // UP button pressed
       if (up_state == 0) {                // if we are not in debounce, increment
         up_state = 1;             // Mark up debounce
         down_state = 0;           // Clear down debounce
         buttonDebounceReset();    // Reset debounce
 
-        if(digitalRead(FOCUS) == LOW) {     // Special delay setting mode
-          uint16_t flush_delay_set = flush_delay;   // Grab a copy of flush delay
-          screenFlushDelay();       // Goto the Flush screen
-          delay(300);
-
-          // Stay on this screen until FOCUS is released
-          while(digitalRead(FOCUS) == LOW) {
-            
-            // Go up with wrap, with the option of going down to 0
-            if(digitalRead(UP) == LOW) {
-              flush_delay += 50;
-            }
-            else if((digitalRead(DOWN) == LOW) && (flush_delay>0)) {
-              flush_delay -= 50;
-            }
-            
-            // Handle the wrap
-            if( flush_delay > FLUSH_DELAY_MAX) {
-              flush_delay = FLUSH_DELAY_MIN;
-            }
-            
-            // Update the displayed value
-            SCREEN.write(0xFE);           // Command Byte
-            SCREEN.write(0x80 + 69);      // Position 70
-            SCREEN.write("          ");
-            SCREEN.write(0xFE);           // Command Byte
-            SCREEN.write(0x80 + 69);      // Position 70
-            SCREEN.print(flush_delay, DEC);
-            SCREEN.write(" ms");
-            if(flush_delay == flush_delay_set) {
-              SCREEN.write(" *");
-            }
-            delay(300);
-
+        if(shut_state) {
+          if (shutter_key < MAX_SHUTTER) {
+            shutter_key++;
+          } else if (shutter_key > MAX_SHUTTER) {   // sanity check
+            shutter_key = MAX_SHUTTER;
           }
-
-          // Write the flush delay to EEPROM if it has changed
-          if(flush_delay != flush_delay_set) {
-            EEPROM.put(ADDR_FLUSHDELAY, flush_delay);
+#if HAS_SCREEN
+          // Update the displayed value
+          SCREEN.write(0xFE);           // Command Byte
+          SCREEN.write(0x80 + 69);      // Position 70
+          SCREEN.write("        ");
+          SCREEN.write(0xFE);           // Command Byte
+          SCREEN.write(0x80 + 69);      // Position 70
+          SCREEN.write(light_menu_strs[shutter_key]);
+          if(shutter_key == shutter_key_set) {
+            SCREEN.write(" *");
           }
           delay(30);
-          screenShutter();
-          continue;
-
-        } else {
-          if(shut_state) {
-            if (shutter_key < MAX_SHUTTER) {
-              shutter_key++;
-            } else if (shutter_key > MAX_SHUTTER) {   // sanity check
-              shutter_key = MAX_SHUTTER;
-            }
-#if HAS_SCREEN
-            // Update the displayed value
-            SCREEN.write(0xFE);           // Command Byte
-            SCREEN.write(0x80 + 69);      // Position 70
-            SCREEN.write("        ");
-            SCREEN.write(0xFE);           // Command Byte
-            SCREEN.write(0x80 + 69);      // Position 70
-            SCREEN.write(light_menu_strs[shutter_key]);
-            if(shutter_key == shutter_key_set) {
-              SCREEN.write(" *");
-            }
-            delay(30);
 #endif
-          } else {
-            shut_state = 1;
-          }
+        } else {
+          shut_state = 1;
         }
         buttonTimerReset();       // Reset button timeout
       }
@@ -754,7 +750,7 @@ void button_handler(void) {
           down_state = 1;           // Mark down debounce
           up_state = 0;             // Clear up debounce
           buttonDebounceReset();    // Reset debounce
-  
+
           if(shutter_key > 1) {
             shutter_key--;
           } else if (shutter_key < 1) {             // sanity check
@@ -914,7 +910,7 @@ void screenShutter(void) {
   SCREEN.write(0x80 + 64);      // Position 64, start of line 2
   SCREEN.write("     ");
   SCREEN.write(light_menu_strs[shutter_key]);
-  SCREEN.write(" *     ");
+  SCREEN.write(" *  ");
 #endif
 }
 
@@ -953,12 +949,12 @@ void screenFlushDelay(void) {
   SCREEN.write(0x01);           // Clear screen
   delay(SCREEN_CMD_DELAY);
 
-  SCREEN.write("SD Flush delay:");
+  SCREEN.write("Flush delay:");
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 64);      // Position 64, start of line 2
   SCREEN.write("     ");
   SCREEN.print(flush_delay, DEC);
-  SCREEN.write(" ms *     ");
+  SCREEN.write(" ms *  ");
 #endif
 }
 

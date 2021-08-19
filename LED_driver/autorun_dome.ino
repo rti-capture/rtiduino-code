@@ -4,7 +4,7 @@ void setup_autorun_dome(void)
   debug("Setup for 76-LED Dome\r\n");
 #endif
 
-#define SKIPGND
+//#define SKIPGND     // used on Glasgow dome
 
 #ifdef SKIPGND
   /* Skipping a ground line because the cable is missing a colour. */

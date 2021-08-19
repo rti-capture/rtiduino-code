@@ -9,18 +9,18 @@
  Autumn 2013
  Philip Basford
  pjbasford@ieee.org
- 
+
  WARNING: All arrays are bytes so sizeof = length
- BETWEEN_SHOT delay is to allow camera to flush to card. 
- This can be short for JPG and fast cards but may need adjusting with focus+Down for slow card or RAW 
- it is not currently saved to flash so reset each power-cycle.
+ flush_delay is to allow camera to flush to card.
+ This can be short for JPG and fast cards and can be adjusted with Down+Focus for slow card or RAW
+ this version saves it in EEPROM (KM Dec 2020)
 */
 /* define this for 2020 controllers with two optos for camera control
 */
 #define PG3_FOCUS
 
-/* ----------------------------------- Compile-time settings ---------------------------------- */  
-#define DEBUG                     1     // Define whether to output debug info on debug serial port
+/* ----------------------------------- Compile-time settings ---------------------------------- */
+//#define DEBUG                     1     // Define whether to output debug info on debug serial port
 #define HAS_SCREEN                1     // Define whether a serial screen is connected to Serial2
 #define LED_BURN_CHECK            1     // Define whether to enable LED_BURN_CHECK
 #define BUTTONS                   5     // The number of buttons connected to the controller
@@ -28,10 +28,10 @@
 #define BUTTON_DEBOUNCE_TIMEOUT   15000 // ~1s
 #define DEFAULT_NUM_LEDS          128   // The default number of LEDs connected. Currently only 76 and 128 are supported.
 
-//#define OVERWRITE_NUM_LEDS        76   // Compile-time overwite value for num_leds. This should be set, flashed, commented out and then re-flashed.
+//#define OVERWRITE_NUM_LEDS        128   // Compile-time overwite value for num_leds. This should be set, flashed, commented out and then re-flashed.
 
 
-/* --------------------------------------- Focus Config --------------------------------------- */  
+/* --------------------------------------- Focus Config --------------------------------------- */
 #define FOCUS_TIMEOUT             45000 // Timeout for focus.
 #define FOCUS_LIMIT               60   // Number of loops, 3 minutes ~ 60, 5 minutes ~ 100
 
@@ -47,7 +47,7 @@
 #define EXPOSURE_SET_TIME          1000   // Leave light on for 1000ms when setting exposure.
 
 
-/* -------------------------------- System Config Definitions --------------------------------- */  
+/* -------------------------------- System Config Definitions --------------------------------- */
 #include <Arduino.h>
 #include <pins_arduino.h>
 
@@ -55,6 +55,7 @@
 #include <EEPROM.h>
 #define ADDR_NUM_LEDS             0
 #define ADDR_SHUTTER_KEY          7
+#define ADDR_FLUSHDELAY           12
 
 // Serial Port Assignments
 #define DEBUG_SERIAL              Serial
@@ -70,7 +71,7 @@
 
 // Hardware Config
 #define DEBUG_LED                 13  //
-#define CAMERA_FOCUS              75 // Package pin 28: output to trigger camera focus - NOT MAPPED IN ARDUINO but is in https://github.com/MCUdude/MegaCore
+#define CAMERA_FOCUS              75  // Package pin 28: output to trigger camera focus - NOT MAPPED IN ARDUINO but is in https://github.com/MCUdude/MegaCore
 #define CAMERA_SHUTTER            41  // Package pin 51: output to trigger camera
 #define TRIGGER                   39  // Package pin 70: Input to start automated capture
 #define AUTOMATED_RUNNING_LED     40  // Package pin 52
@@ -105,25 +106,30 @@ byte FOCUS_GROUND[8];                   // Array to hold focus ground sequence.
 #define PRE_ON_DELAY              20    // LED "warm up" delay
 #define FOCUS_LAG_TIME            100   // 100ms for canon from PJB's testing
 #define SHUTTER_ACTUATION_TIME    70    // 0.056s from http://www.imaging-resource.com/PRODS/nikon-d810/nikon-d810A6.HTM
-uint16_t BETWEEN_SHOT_DELAY = 400;      // default time in ms between shots to allow writing to card. depends on cam/card
+
+#define FLUSH_DELAY_MIN           50
+#define FLUSH_DELAY_MAX           700
+#define DEFAULT_FLUSH_DELAY       400
+uint16_t flush_delay = DEFAULT_FLUSH_DELAY;      // global copy of time in ms between shots to allow writing to card. depends on cam/card
+
 #define MAX_SHUTTER               16    // Number of shutter speed entries
 #define DEFAULT_SHUTTER_KEY       10    // Default to half second exposures if EEPROM value corrupt/missing
 uint8_t shutter_key;                    // Key for the position in the shutter speed table - this is stored in EEPROM
 
 #define SCREEN_CMD_DELAY          25    // Delay after some screen commands. Prevents blanking/non-response issues.
- 
+
 #define STATE_AUTORUN             0x01  // State mask to indicate autorun is in progress
 #define STATE_AUTORUN_STOP        0x02  // State mask to indicate that autorun should stop
 uint8_t status_byte = 0;                // Status byte to indicate run state.
 
-/* -------------------------------------- Static arrays --------------------------------------- */  
+/* -------------------------------------- Static arrays --------------------------------------- */
 const byte leds[LED_BANKS][8] = {     /* Pin allocations for LED banks */
   {22, 23, 24, 25, 26, 27, 28, 29},   /* LED Bank A, Rows 0-7 (+28V) */
   {37, 36, 35, 34, 33, 32, 31, 30},   /* LED Bank B, Columns 0-7 (GND) */
   {49, 48, 47, 46, 45, 44, 43, 42}    /* LED Bank C, Rows 8-15 (+28V) */
 };
 
-const uint16_t light_on_time[MAX_SHUTTER + 1] = {     /* Array of strings to hold screen text */
+const uint16_t light_on_time[MAX_SHUTTER + 1] = {     /* LUT of exposure times */
   0,
   67 + LIGHT_SLACK_TIME,              /* 1/15 exposure */
   77 + LIGHT_SLACK_TIME,              /* 1/13 exposure */
@@ -164,7 +170,7 @@ const char *light_menu_strs[MAX_SHUTTER + 1] = {      /* Array of strings to hol
 };
 /* -------------------------------------------------------------------------------------------- */
 
-  
+
 void debug(String output){
 #if DEBUG
 #ifdef DEBUG_SERIAL
@@ -176,7 +182,7 @@ void debug(String output){
 }
 
 void setup() {
-/* ------------------------------------ Setup serial ports ------------------------------------ */  
+/* ------------------------------------ Setup serial ports ------------------------------------ */
   CONSOLE.begin(38400); //init serial port
   CONSOLE.setTimeout(100);
 
@@ -184,7 +190,7 @@ void setup() {
   DEBUG_SERIAL.begin(9600);
   DEBUG_SERIAL.setTimeout(100);
 #endif
-// wait a bit to see if it helps screen
+// wait to allow screen to start up
 delay(500);
 #if HAS_SCREEN
   SCREEN.begin(9600); //init serial port
@@ -214,7 +220,7 @@ delay(500);
   #warning Compile-Time overwrite set for LED Number. Please undef OVERWRITE_NUM_LEDS and reflash
 #if ((OVERWRITE_NUM_LEDS != 76) & (OVERWRITE_NUM_LEDS != 128))
   #error "Unsupported Overwrite Dome Size."
-#endif  
+#endif
   num_leds = OVERWRITE_NUM_LEDS;
   EEPROM.put(ADDR_NUM_LEDS, OVERWRITE_NUM_LEDS);
 #endif
@@ -225,13 +231,14 @@ delay(500);
     DEBUG_SERIAL.write("Error reading Number of LEDs from EEPROM: defaulting to ");
     DEBUG_SERIAL.print(DEFAULT_NUM_LEDS, DEC);
     DEBUG_SERIAL.write(" LEDs\r\n");
-#endif    
+#endif
     num_leds = DEFAULT_NUM_LEDS;
     EEPROM.put(ADDR_NUM_LEDS, DEFAULT_NUM_LEDS);
   }
 
 /* ---------------------------------- Get Stored Shutter Key ---------------------------------- */
   shutter_key = EEPROM.read(ADDR_SHUTTER_KEY);    // Get the shutter key stored in EEPROM
+
 
   if((shutter_key == 0) || (shutter_key > MAX_SHUTTER)) {
     // shutter_key EEPROM is corrupt. Reset to default.
@@ -241,13 +248,19 @@ delay(500);
     DEBUG_SERIAL.write(" (");
     DEBUG_SERIAL.write(light_menu_strs[DEFAULT_SHUTTER_KEY]);
     DEBUG_SERIAL.write(" shutter time)\r\n");
-#endif    
+#endif
 
     shutter_key = DEFAULT_SHUTTER_KEY;
     EEPROM.put(ADDR_SHUTTER_KEY, DEFAULT_SHUTTER_KEY);
-  }
+    }
 
-/* ------------------------------- Write initialisation strings ------------------------------- */ 
+    flush_delay = EEPROM.read( ADDR_FLUSHDELAY); // get stored delay and set to default if out of range
+    if( (flush_delay < FLUSH_DELAY_MIN) || (flush_delay > FLUSH_DELAY_MAX) ) {
+      flush_delay = DEFAULT_FLUSH_DELAY;
+      EEPROM.put(ADDR_FLUSHDELAY, DEFAULT_FLUSH_DELAY);
+    }
+
+/* ------------------------------- Write initialisation strings ------------------------------- */
   if(num_leds == 76) {
     // Standard 76-LED Dome
     num_cols = 5;
@@ -260,9 +273,9 @@ delay(500);
   } else if(num_leds == 128) {
     // 128-LED SuperDome
     num_cols = 8;
-    
+
     CONSOLE.write("RTI SUPERDOME Controller v1.4\r\n");
-  
+
 #ifdef DEBUG_SERIAL
     DEBUG_SERIAL.write("RTI SUPERDOME Controller v1.4\r\n");
 #endif
@@ -272,15 +285,15 @@ delay(500);
 
 
 /* -------------------------------- Setup autorun LED sequence -------------------------------- */
-  if(num_leds == 76)  {  
+  if(num_leds == 76)  {
     setup_autorun_dome();
   } else if (num_leds == 128) {
     setup_autorun_superdome();
   }
 
-/* -------------------------------------- Setup I/O pins -------------------------------------- */ 
+/* -------------------------------------- Setup I/O pins -------------------------------------- */
   pinMode(TRIGGER, INPUT);
-  pinMode(CAMERA_SHUTTER, OUTPUT); 
+  pinMode(CAMERA_SHUTTER, OUTPUT);
   pinMode(AUTOMATED_RUNNING_LED, OUTPUT);
   digitalWrite(DEBUG_LED, LOW);
   for( int i = 0; i < 3; i++){
@@ -302,17 +315,17 @@ delay(500);
     SREG = oldSREG;
   }
 #else
-  pinMode(CAMERA_FOCUS, OUTPUT); 
+  pinMode(CAMERA_FOCUS, OUTPUT);
 #endif
 
 #if BUTTONS > 0
   // Setup any configured buttons - assumes buttons are on consecutive pins.
   pinMode((BUTTON_0), INPUT);
-  
+
   // Enable Pin Change Interrupt on BUTTON_0 as this will ALWAYS be Emergency-stop
   *digitalPinToPCMSK(BUTTON_0) |= bit (digitalPinToPCMSKbit(BUTTON_0));  // enable pin
   PCIFR  |= bit (digitalPinToPCICRbit(BUTTON_0));                        // clear any outstanding interrupt
-  PCICR  |= bit (digitalPinToPCICRbit(BUTTON_0));                        // enable interrupt for the group 
+  PCICR  |= bit (digitalPinToPCICRbit(BUTTON_0));                        // enable interrupt for the group
 
 #if BUTTONS > 1
   pinMode((BUTTON_1), INPUT);
@@ -320,9 +333,9 @@ delay(500);
   pinMode((BUTTON_2), INPUT);
   pinMode((BUTTON_3), INPUT);
 #if BUTTONS == 5
-  pinMode((BUTTON_4), INPUT);  
-#endif  
-#endif  
+  pinMode((BUTTON_4), INPUT);
+#endif
+#endif
 #endif
 
 #endif
@@ -331,13 +344,18 @@ delay(500);
   watchdoginit();
   buttonTimerInit();
 
-/* -------------------------------------- Setup I/O pins -------------------------------------- */   
+/* -------------------------------------- Setup I/O pins -------------------------------------- */
   CONSOLE.write("Init Complete\r\n");
-  
+
 #ifdef DEBUG_SERIAL
     DEBUG_SERIAL.write("Init Complete\r\n");
-#endif 
-/* -------------------------------------------------------------------------------------------- */  
+#endif
+/* -------------------------------------------------------------------------------------------- */
+  // Turn off all of the LEDs just in case
+  process(A, char(0));
+  process(B, char(0));
+  process(C, char(0));
+
 }
 
 boolean multiple_leds(byte input){
@@ -360,16 +378,16 @@ void watchdoginit() {
   TCCR1B |= (1 << WGM12);
   TCCR1B &= !((1 << CS12) | (1 << CS11) | (1 << CS10));
   // Set CS12 and CS10 bits for 1024 prescaler
-  // TCCR1B |= (1 << CS12) | (1 << CS10);  
+  // TCCR1B |= (1 << CS12) | (1 << CS10);
 
   sei();//allow interrupts
  }
- 
+
 void watchdogstop() {
   debug("\tWatchdog STOP\r\n");
   //digitalWrite(DEBUG_LED, LOW);
-  // Set CS12 and CS10 bits ZERO to stop timer 
-  TCCR1B &= !((1 << CS12) | (1 << CS10)); 
+  // Set CS12 and CS10 bits ZERO to stop timer
+  TCCR1B &= !((1 << CS12) | (1 << CS10));
 }
 
 void watchdogstart() {
@@ -377,7 +395,7 @@ void watchdogstart() {
   digitalWrite(DEBUG_LED, HIGH);
   TCNT1  = 0;//initialize counter value to 0
   // Set CS12 and CS10 bits for 1024 prescaler and start
-  TCCR1B |= (1 << CS12) | (1 << CS10);  
+  TCCR1B |= (1 << CS12) | (1 << CS10);
 }
 
 
@@ -387,7 +405,7 @@ void flash_debug(int time){
   digitalWrite(DEBUG_LED, LOW);
 }
 
-
+/************** The main Arduino Loop ****************************************/
 void loop() {
 #if BUTTONS > 1           // 2nd button (BUTTON_1) is always GO/trigger
   if((digitalRead(TRIGGER) == LOW) || (digitalRead(GO) == LOW)) {
@@ -401,7 +419,7 @@ void loop() {
 #if BUTTONS > 3         // 3rd and 4th buttons connected - UP and DOWN respectively
   else if((digitalRead(UP) == LOW) || (digitalRead(DOWN) == LOW)) {
     // up/down button pressed, want to change set exposure.
-    button_handler();    
+    button_handler();
     delay(50);
     screenBanner();
   }
@@ -409,13 +427,14 @@ void loop() {
 
 #if BUTTONS > 4        // 5th button connected: FOCUS lights
   else if(digitalRead(FOCUS) == LOW) {
+    debug("focus lights\n");
     focus_handler();
     delay(50);
     screenBanner();
   }
 #endif
-
-  if(CONSOLE.peek() == '?'){  
+/*
+  if(CONSOLE.peek() == '?'){
     // This is the software querying to make sure it's got the correct device attached
     CONSOLE.read();
     spoofResponse();
@@ -426,7 +445,7 @@ void loop() {
   } else if (CONSOLE.available() >=6){
     char input[10];
     CONSOLE.readBytes(input,6);
-    //read the expected amount of data 
+    //read the expected amount of data
   	char Astate = input[1];
   	char Bstate = input[3];
   	char Cstate = input[5];
@@ -439,7 +458,7 @@ void loop() {
       debug("multiple leds");
   		watchdogstop();
   	}else{
-      debug("kick dog");
+      debug("stop and start the watchdog");
       watchdogstop();
   		watchdogstart();
   	}
@@ -447,48 +466,49 @@ void loop() {
     process(B, Bstate);
     process(C, Cstate);
   }else{
-   //didn't get the expected amount of data from the serial link before timeout 
+   //didn't get the expected amount of data from the serial link before timeout
   }
+  */
 }
 
 
 void autorun(){
-  // Perform an automated capture sequence 
+  // Perform an automated capture sequence
   digitalWrite(AUTOMATED_RUNNING_LED, HIGH);
   status_byte &= ~(STATE_AUTORUN_STOP);
   status_byte |= STATE_AUTORUN;
-  
+
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x01);           // Clear screen
   delay(5);
-  
+
   SCREEN.write("Autorun  Shutter");
-  
+
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 67);
   SCREEN.write("/");
   SCREEN.print(num_leds, DEC);
-  
+
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 71);
   SCREEN.write("    ");
   SCREEN.write(light_menu_strs[shutter_key]);
-  
-  
+
+
   for(int i = 0; i < num_leds; i++){
       SCREEN.write(0xFE);           // Command Byte
       SCREEN.write(0x80 + 64);
       SCREEN.write("   ");
       SCREEN.write(0xFE);           // Command Byte
       SCREEN.write(0x80 + 64);
-      SCREEN.print(i, DEC);   
-      
+      SCREEN.print(i, DEC);
+
       if(status_byte & STATE_AUTORUN_STOP) {    // E-Stop has been pressed, stop running.
         break;
-      }      
-      
+      }
+
       watchdogstart();
-      
+
       process(A, char(AUTORUN_LEDS[i][0]));
       process(B, char(AUTORUN_LEDS[i][1]));
       process(C, char(AUTORUN_LEDS[i][2]));
@@ -505,10 +525,10 @@ void autorun(){
         SREG = oldSREG;
       }
 #else
-      digitalWrite(CAMERA_FOCUS, HIGH); 
+      digitalWrite(CAMERA_FOCUS, HIGH);
 #endif
-      delay(FOCUS_LAG_TIME);                    // Give the camera some time to process the focus half-press  
-      
+      delay(FOCUS_LAG_TIME);                    // Give the camera some time to process the focus half-press
+
       digitalWrite(CAMERA_SHUTTER, HIGH);       // Actuate the shutter
       delay(SHUTTER_ACTUATION_TIME);            // Give the camera some time to process the shutter
       digitalWrite(CAMERA_SHUTTER, LOW);        // Disable shutter actuation
@@ -525,32 +545,32 @@ void autorun(){
         SREG = oldSREG;
       }
 #else
-      digitalWrite(CAMERA_FOCUS, LOW); 
-#endif  
-      
+      digitalWrite(CAMERA_FOCUS, LOW);
+#endif
+
       delay(light_on_time[shutter_key]);        // Leave the LED on for the exposure time.
-      process(A, char(0));
+      process(A, char(0));                      // turn off ALL leds
       process(B, char(0));
       process(C, char(0));
-      
+
       watchdogstop();
-      
+
       if(status_byte & STATE_AUTORUN_STOP) {    // E-Stop has been pressed, stop running.
         break;
       }
-      
-      delay(BETWEEN_SHOT_DELAY);   
+
+      delay(flush_delay);                       // Wait to allow image to write to memory card
   }
   digitalWrite(AUTOMATED_RUNNING_LED, LOW);
-  
+
   screenBanner();    // Print the screen banner
-  
+
   status_byte &= ~(STATE_AUTORUN_STOP | STATE_AUTORUN);
 }
 
 void spoofResponse(){
   // Spoof the response from the USB IO device (in case old rti acquire talks to us)
-  CONSOLE.println("USB I/O 24R1"); 
+  CONSOLE.println("USB I/O 24R1");
 }
 
 
@@ -565,7 +585,7 @@ void process(byte bank, byte state_in){
     digitalWrite(leds[bank][1], HIGH);
   }else{
     digitalWrite(leds[bank][1], LOW);
-  } 
+  }
   if (state & 4){
     digitalWrite(leds[bank][2], HIGH);
   }else{
@@ -600,24 +620,24 @@ void process(byte bank, byte state_in){
 
 void buttonTimerInit(void) {
   // Initialise the button timer (Timer 5) and debounce timer (Timer 4)
-  TCCR5A = 0;         // Set entire TCCR5A port to 0 - disable output pins 
+  TCCR5A = 0;         // Set entire TCCR5A port to 0 - disable output pins
   TCCR5B = 0;         // Set entire TCCR5B port to 0.
   TCCR5C = 0;         // Set entire TCCR5C port to 0
   TCNT5 = 0;          // Set counter value to 0
 
-  TCCR4A = 0;         // Set entire TCCR4A port to 0 - disable output pins 
+  TCCR4A = 0;         // Set entire TCCR4A port to 0 - disable output pins
   TCCR4B = 0;         // Set entire TCCR4B port to 0.
   TCCR4C = 0;         // Set entire TCCR4C port to 0
   TCNT4 = 0;          // Set counter value to 0
 
   // Set CS12 and CS10 bits for 1024 prescaler
-  // TCCR5B |= (1 << CS52) | (1 << CS50);  
+  // TCCR5B |= (1 << CS52) | (1 << CS50);
 }
 
 void buttonTimerReset(void) {
   TCCR5B = 0;                             // Stop the timer
   TCNT5 = 0;                              // Set counter value to 0
-  TCCR5B |= (1 << CS52) | (1 << CS50);    // Set CS52 and CS50 bits for 1024 prescaler  
+  TCCR5B |= (1 << CS52) | (1 << CS50);    // Set CS52 and CS50 bits for 1024 prescaler
 }
 
 void buttonTimerStop(void) {
@@ -645,12 +665,13 @@ uint16_t buttonDebounceValue (void) {
 
 
 void button_handler(void) {
-  uint8_t up_state, down_state = 0;
+  uint8_t up_state = 0, down_state = 0, shut_state = 0;
+  uint8_t shutter_key_set = shutter_key; // grab a local copy of the shutter key
   String message;
   screenShutter();              // Display the shutter banner
-  buttonTimerReset();           // Start the button timeout 
-  
-  while (buttonTimerValue() < BUTTON_TIMEOUT) {   
+  buttonTimerReset();           // Start the button timeout
+
+  while (buttonTimerValue() < BUTTON_TIMEOUT) {
     if(digitalRead(UP) == LOW) {              // UP button pressed
       if (up_state == 0) {                // if we are not in debounce, increment
         up_state = 1;             // Mark up debounce
@@ -658,60 +679,109 @@ void button_handler(void) {
         buttonDebounceReset();    // Reset debounce
 
         if(digitalRead(FOCUS) == LOW) {     // Special delay setting mode
-          if( BETWEEN_SHOT_DELAY >= 1000) {
-            BETWEEN_SHOT_DELAY = 100;
+          uint16_t flush_delay_set = flush_delay;   // Grab a copy of flush delay
+          screenFlushDelay();       // Goto the Flush screen
+          delay(300);
+
+          // Stay on this screen until FOCUS is released
+          while(digitalRead(FOCUS) == LOW) {
+            
+            // Go up with wrap, with the option of going down to 0
+            if(digitalRead(UP) == LOW) {
+              flush_delay += 50;
+            }
+            else if((digitalRead(DOWN) == LOW) && (flush_delay>0)) {
+              flush_delay -= 50;
+            }
+            
+            // Handle the wrap
+            if( flush_delay > FLUSH_DELAY_MAX) {
+              flush_delay = FLUSH_DELAY_MIN;
+            }
+            
+            // Update the displayed value
+            SCREEN.write(0xFE);           // Command Byte
+            SCREEN.write(0x80 + 69);      // Position 70
+            SCREEN.write("          ");
+            SCREEN.write(0xFE);           // Command Byte
+            SCREEN.write(0x80 + 69);      // Position 70
+            SCREEN.print(flush_delay, DEC);
+            SCREEN.write(" ms");
+            if(flush_delay == flush_delay_set) {
+              SCREEN.write(" *");
+            }
+            delay(300);
+
           }
-          else BETWEEN_SHOT_DELAY += 100;
-          // Update the displayed value
-          SCREEN.write(0xFE);           // Command Byte
-          SCREEN.write(0x01);           // Clear Screen
-          message = String(BETWEEN_SHOT_DELAY);
-          SCREEN.print("delay:" + message + "ms " );
+
+          // Write the flush delay to EEPROM if it has changed
+          if(flush_delay != flush_delay_set) {
+            EEPROM.put(ADDR_FLUSHDELAY, flush_delay);
+          }
           delay(30);
+          screenShutter();
+          continue;
+
+        } else {
+          if(shut_state) {
+            if (shutter_key < MAX_SHUTTER) {
+              shutter_key++;
+            } else if (shutter_key > MAX_SHUTTER) {   // sanity check
+              shutter_key = MAX_SHUTTER;
+            }
+#if HAS_SCREEN
+            // Update the displayed value
+            SCREEN.write(0xFE);           // Command Byte
+            SCREEN.write(0x80 + 69);      // Position 70
+            SCREEN.write("        ");
+            SCREEN.write(0xFE);           // Command Byte
+            SCREEN.write(0x80 + 69);      // Position 70
+            SCREEN.write(light_menu_strs[shutter_key]);
+            if(shutter_key == shutter_key_set) {
+              SCREEN.write(" *");
+            }
+            delay(30);
+#endif
+          } else {
+            shut_state = 1;
           }
-        else{
-          if (shutter_key < MAX_SHUTTER) {
-            shutter_key++;
-          } else if (shutter_key > MAX_SHUTTER) {   // sanity check
-            shutter_key = MAX_SHUTTER;
-          }
-  
-          // Update the displayed value
-          SCREEN.write(0xFE);           // Command Byte
-          SCREEN.write(0x80 + 69);      // Position 70
-          SCREEN.write("      ");
-          SCREEN.write(0xFE);           // Command Byte
-          SCREEN.write(0x80 + 69);      // Position 70
-          SCREEN.write(light_menu_strs[shutter_key]);
-          delay(30);
-        } 
+        }
         buttonTimerReset();       // Reset button timeout
       }
     } else if(digitalRead(DOWN) == LOW) {     // Down button pressed
-      if (down_state == 0) {              // if we are not in debounce, decrement
-        down_state = 1;           // Mark down debounce
-        up_state = 0;             // Clear up debounce
-        buttonDebounceReset();    // Reset debounce
-        
-        if(shutter_key > 1) {
-          shutter_key--;
-        } else if (shutter_key < 1) {             // sanity check
-          shutter_key = 1;
-        }
+      if(shut_state) {
+        if (down_state == 0) {              // if we are not in debounce, decrement
+          down_state = 1;           // Mark down debounce
+          up_state = 0;             // Clear up debounce
+          buttonDebounceReset();    // Reset debounce
+  
+          if(shutter_key > 1) {
+            shutter_key--;
+          } else if (shutter_key < 1) {             // sanity check
+            shutter_key = 1;
+          }
 
+#if HAS_SCREEN
         // Update the displayed value
-        SCREEN.write(0xFE);           // Command Byte
-        SCREEN.write(0x80 + 69);      // Position 70
-        SCREEN.write("      ");
-        SCREEN.write(0xFE);           // Command Byte
-        SCREEN.write(0x80 + 69);      // Position 70
-        SCREEN.write(light_menu_strs[shutter_key]);
-        delay(30);
+          SCREEN.write(0xFE);           // Command Byte
+          SCREEN.write(0x80 + 69);      // Position 70
+          SCREEN.write("        ");
+          SCREEN.write(0xFE);           // Command Byte
+          SCREEN.write(0x80 + 69);      // Position 70
+          SCREEN.write(light_menu_strs[shutter_key]);
+          if(shutter_key == shutter_key_set) {
+            SCREEN.write(" *");
+          }
+          delay(30);
+#endif
+        }
+      } else {
+        shut_state = 1;
       }
       buttonTimerReset();       // Reset button timeout
     }
 
-    if ((buttonDebounceValue() > BUTTON_DEBOUNCE_TIMEOUT) || ((digitalRead(UP) == HIGH) & (digitalRead(DOWN) == HIGH))) {    
+    if ((buttonDebounceValue() > BUTTON_DEBOUNCE_TIMEOUT) || ((digitalRead(UP) == HIGH) & (digitalRead(DOWN) == HIGH))) {
       // Debounce timeout reached, clear markers
       up_state = 0;
       down_state = 0;
@@ -719,9 +789,10 @@ void button_handler(void) {
     }
   }
 
-
-  // Write the new shutter_key to EEPROM
-  EEPROM.put(ADDR_SHUTTER_KEY, shutter_key);
+  if(shutter_key != shutter_key_set)
+  { // Write the new shutter_key to EEPROM if the value has changed
+    EEPROM.put(ADDR_SHUTTER_KEY, shutter_key);
+  }
 
   //screenBanner();
 }
@@ -729,10 +800,10 @@ void button_handler(void) {
 void focus_handler(void) {
   // Turn on the top 4 lights to allow focusing.
   uint8_t focus_loop, row_key, col_key;
-  
+
   status_byte &= ~(STATE_AUTORUN_STOP);
   status_byte |= STATE_AUTORUN;
-  
+
   screenFocus();              // Display the focus banner
 
   // Turn on some LEDs for focusing.
@@ -745,42 +816,42 @@ void focus_handler(void) {
     process(B, char(FOCUS_BANK_B));
     process(C, char(FOCUS_BANK_AC));
   }
-  
+
   // Use debounce timer to delay between FOCUS button tests.
   buttonDebounceReset();
   while (buttonDebounceValue() < BUTTON_DEBOUNCE_TIMEOUT);
 
-  // Focus timeout - about N minutes or until STOP button is pressed.   
+  // Focus timeout - about N minutes or until STOP button is pressed.
   for(focus_loop = 0; focus_loop < FOCUS_LIMIT; focus_loop++) {
     buttonTimerReset();         // Start the button timeout
     while (buttonTimerValue() < FOCUS_TIMEOUT) {
 
-      if(digitalRead(FOCUS) == LOW) {   
+      if(digitalRead(FOCUS) == LOW) {
         // FOCUS button has been pressed again, start an autowalk to set exposure
         screenExposure();     // Display the exposure banner
-        
+        debug("exposure mode\n");
         for(row_key = 0; row_key<4; row_key++) {
           switch (row_key) {
             // Set the row for autowalk
             case 0:   process(A, char(8));
                       process(C, char(0));
                       break;
-                      
+
             case 1:   process(A, char(128));
                       process(C, char(0));
                       break;
-                      
+
             case 2:   process(A, char(0));
                       process(C, char(128));
                       break;
-                      
+
             case 3:   process(A, char(0));
                       process(C, char(8));
                       break;
-                      
+
             deafult:  break;
           }
-          
+
           for(col_key = 0; col_key < num_cols; col_key++) {
             //Cycle through the different columns
             watchdogstart();
@@ -792,15 +863,15 @@ void focus_handler(void) {
           }
           if(status_byte & STATE_AUTORUN_STOP) break;   // E-Stop has been pressed, stop running.
         }
-        
+
         status_byte |= STATE_AUTORUN_STOP;        // Reached the end of the autowalk, indicate that we should end.
-        
+
       }
       if(status_byte & STATE_AUTORUN_STOP) break;      // E-Stop has been pressed, stop running.
     }
     if(status_byte & STATE_AUTORUN_STOP) break;       // E-Stop has been pressed, stop running.
   }
-  
+
   // Turn off all of the LEDs
   process(A, char(0));
   process(B, char(0));
@@ -816,7 +887,7 @@ void screenBanner(void) {
 
   //SCREEN.write(0xFE);           // Command Byte
   //SCREEN.write(0x80);           // Position 0
-  
+
   SCREEN.write("RTI ");
 
   if(num_leds == 76) {          // Standard 76-LED Dome
@@ -824,7 +895,7 @@ void screenBanner(void) {
   } else if(num_leds == 128) {   // 128-LED SuperDome
     SCREEN.write("SUPERDOME");
   }
- 
+
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 0x40);    // Position 64, start of line 2
   SCREEN.write("Controller v1.4");
@@ -837,16 +908,14 @@ void screenShutter(void) {
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x01);           // Clear screen
   delay(SCREEN_CMD_DELAY);
-  
+
   SCREEN.write("Shutter Speed:");
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 64);      // Position 64, start of line 2
   SCREEN.write("     ");
   SCREEN.write(light_menu_strs[shutter_key]);
-  SCREEN.write(0xFE);           // Command Byte
-  SCREEN.write(0x80 + 75);      // Position 64, start of line 2
-  SCREEN.write("     ");
-#endif  
+  SCREEN.write(" *     ");
+#endif
 }
 
 void screenFocus(void) {
@@ -855,12 +924,12 @@ void screenFocus(void) {
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x01);           // Clear screen
   delay(SCREEN_CMD_DELAY);
-  
+
   SCREEN.write("Focusing LEDs ON");
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 64);      // Position 64, start of line 2
   SCREEN.write("STOP to exit");
-#endif  
+#endif
 }
 
 void screenExposure(void) {
@@ -869,12 +938,28 @@ void screenExposure(void) {
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x01);           // Clear screen
   delay(SCREEN_CMD_DELAY);
-  
+
   SCREEN.write("Exposure Cycle");
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 64);      // Position 64, start of line 2
   SCREEN.write("STOP to exit");
-#endif  
+#endif
+}
+
+void screenFlushDelay(void) {
+  // Print the Flush Delay change screen
+#if HAS_SCREEN
+  SCREEN.write(0xFE);           // Command Byte
+  SCREEN.write(0x01);           // Clear screen
+  delay(SCREEN_CMD_DELAY);
+
+  SCREEN.write("SD Flush delay:");
+  SCREEN.write(0xFE);           // Command Byte
+  SCREEN.write(0x80 + 64);      // Position 64, start of line 2
+  SCREEN.write("     ");
+  SCREEN.print(flush_delay, DEC);
+  SCREEN.write(" ms *     ");
+#endif
 }
 
 ISR(TIMER1_COMPA_vect){//timer0 interrupt 2kHz toggles pin 8
@@ -896,7 +981,6 @@ ISR (PCINT2_vect) {     // Pin change interrupt for Port K
     PORTL = 0;                          // turn off Bank C
     PORTC = 0;                          // turn off Bank B
     digitalWrite(CAMERA_SHUTTER, LOW);  // turn off camera shutter just in case
-    status_byte |= STATE_AUTORUN_STOP;  // Mark that the STOP interrupt has fired  
+    status_byte |= STATE_AUTORUN_STOP;  // Mark that the STOP interrupt has fired
   }
 }
-  

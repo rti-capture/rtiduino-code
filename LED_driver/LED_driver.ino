@@ -258,10 +258,10 @@ delay(500);
     // 128-LED SuperDome
     num_cols = 8;
     
-    CONSOLE.write("RTI SUPERDOME Controller v1.3\r\n");
+    CONSOLE.write("RTI SUPERDOME Controller v1.4\r\n");
   
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI SUPERDOME Controller v1.3\r\n");
+    DEBUG_SERIAL.write("RTI SUPERDOME Controller v1.4\r\n");
 #endif
   }
 
@@ -824,7 +824,7 @@ void screenBanner(void) {
  
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 0x40);    // Position 64, start of line 2
-  SCREEN.write("Controller v1.3");
+  SCREEN.write("Controller v1.4");
 #endif
 }
 

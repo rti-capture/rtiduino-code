@@ -158,7 +158,7 @@ void setup_autorun_dome(void)
   AUTORUN_LEDS[44][2] = 2;
   AUTORUN_LEDS[45][0] = 0;  //8
   AUTORUN_LEDS[45][1] = 8;
-  AUTORUN_LEDS[45][2] = 32;
+  AUTORUN_LEDS[45][2] = 2;
   AUTORUN_LEDS[46][0] = 0;  //9
   AUTORUN_LEDS[46][1] = 16;
   AUTORUN_LEDS[46][2] = 2;

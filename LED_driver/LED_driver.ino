@@ -1,20 +1,24 @@
 /*
  LED driver for RTI Dome 7 "SuperDome" onwards
+ version 1.5, better delay control. Defaults are 76 leds and 100ms flush
  Nov 2018 updates for 2019/20 domes, Kirk Martinez km@ecs.soton.ac.uk
  Winter 2016
- Graeme Bragg
- g.bragg@ecs.soton.ac.uk
+ Graeme Bragg,  g.bragg@ecs.soton.ac.uk
 
  Modified from LED driver for RTI domes mark >3
  Autumn 2013
- Philip Basford
- pjbasford@ieee.org
+ Philip Basford,  pjbasford@ieee.org
 
  WARNING: All arrays are bytes so sizeof = length
  flush_delay is to allow camera to flush to card.
  This can be short for JPG and fast cards and can be adjusted with Down+Focus for slow card or RAW
+ Press Down then hold Focus button. Up/Down now cycle through flush delay.
  this version saves it in EEPROM (KM Dec 2020)
+
+ From dome 14 onwards choose MCU and board as atmega 2560
 */
+
+#define SPLASHVERSION "Controller v1.5"
 /* define this for 2020 controllers with two optos for camera control
 */
 #define PG3_FOCUS
@@ -26,7 +30,7 @@
 #define BUTTONS                   5     // The number of buttons connected to the controller
 #define BUTTON_TIMEOUT            45000 // Timeout for buttons. 15000 is 0.96s
 #define BUTTON_DEBOUNCE_TIMEOUT   15000 // ~1s
-#define DEFAULT_NUM_LEDS          128   // The default number of LEDs connected. Currently only 76 and 128 are supported.
+#define DEFAULT_NUM_LEDS          76   // The default number of LEDs connected. Currently only 76 and 128 are supported.
 
 //#define OVERWRITE_NUM_LEDS        128   // Compile-time overwite value for num_leds. This should be set, flashed, commented out and then re-flashed.
 
@@ -109,7 +113,7 @@ byte FOCUS_GROUND[8];                   // Array to hold focus ground sequence.
 
 #define FLUSH_DELAY_MIN           50
 #define FLUSH_DELAY_MAX           700
-#define DEFAULT_FLUSH_DELAY       400
+#define DEFAULT_FLUSH_DELAY       100
 uint16_t flush_delay = DEFAULT_FLUSH_DELAY;      // global copy of time in ms between shots to allow writing to card. depends on cam/card
 
 #define MAX_SHUTTER               16    // Number of shutter speed entries
@@ -264,20 +268,20 @@ delay(500);
   if(num_leds == 76) {
     // Standard 76-LED Dome
     num_cols = 5;
-    CONSOLE.write("RTI DOME Controller v1.4\r\n");
+    CONSOLE.write("RTI DOME Controller v1.5\r\n");
 
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI DOME Controller v1.4\r\n");
+    DEBUG_SERIAL.write("RTI DOME Controller v1.5\r\n");
 #endif
 
   } else if(num_leds == 128) {
     // 128-LED SuperDome
     num_cols = 8;
 
-    CONSOLE.write("RTI SUPERDOME Controller v1.4\r\n");
+    CONSOLE.write("RTI SUPERDOME Controller v1.5\r\n");
 
 #ifdef DEBUG_SERIAL
-    DEBUG_SERIAL.write("RTI SUPERDOME Controller v1.4\r\n");
+    DEBUG_SERIAL.write("RTI SUPERDOME Controller v1.5\r\n");
 #endif
   }
 
@@ -894,7 +898,7 @@ void screenBanner(void) {
 
   SCREEN.write(0xFE);           // Command Byte
   SCREEN.write(0x80 + 0x40);    // Position 64, start of line 2
-  SCREEN.write("Controller v1.4");
+  SCREEN.write(SPLASHVERSION);
 #endif
 }
 
